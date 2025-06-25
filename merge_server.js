@@ -1,8 +1,12 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import { twiml as twimlVoice, default as twilio } from 'twilio';
+const express = require('express');
+const dotenv = require('dotenv');
+const twilioPkg = require('twilio');
 
 dotenv.config();
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const {
   TWILIO_ACCOUNT_SID,
@@ -10,11 +14,9 @@ const {
   TWILIO_PHONE_NUMBER
 } = process.env;
 
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const twilio = twilioPkg;
+const twimlVoice = twilio.twiml;
 
-// 🔁 Conference room name — consistent for all participants
 const CONFERENCE_ROOM = 'FedExInterviewRoom';
 
 app.post('/connect-ultravox', (req, res) => {
@@ -32,7 +34,7 @@ app.post('/tool-calls', async (req, res) => {
 
       const call = await client.calls.create({
         twiml: `<Response><Dial><Conference>${CONFERENCE_ROOM}</Conference></Dial></Response>`,
-        to: '+918900072799', // 🔁 Replace with actual manager number
+        to: '+918900072799', // <-- Update with manager phone
         from: TWILIO_PHONE_NUMBER
       });
 
@@ -45,7 +47,7 @@ app.post('/tool-calls', async (req, res) => {
   res.status(400).json({ error: 'Unknown tool name' });
 });
 
-const PORT = process.env.MERGE_PORT || 6000;
+const PORT = process.env.MERGE_PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🛠️ Merge server running on port ${PORT}`);
 });
