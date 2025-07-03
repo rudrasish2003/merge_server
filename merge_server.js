@@ -17,26 +17,27 @@ const {
 
 const twilio = twilioPkg;
 const twimlVoice = twilio.twiml;
-
 const CONFERENCE_ROOM = 'FedExInterviewRoom';
 
-// 🎯 Ultravox connect webhook: joins the caller to a conference
+// 🎯 Ultravox connect webhook: joins the original caller to a Twilio conference
 app.post('/connect-ultravox', (req, res) => {
   const response = new twimlVoice.VoiceResponse();
   response.dial().conference(CONFERENCE_ROOM);
   res.type('text/xml').send(response.toString());
 });
 
-// 🎯 Tool endpoint for Ultravox to merge the manager
+// 🎯 Tool endpoint: called by Ultravox to merge the manager into the call
 app.post('/tool-calls', (req, res) => {
   console.log('🛬 Received tool call at /tool-calls');
 
-  // ✅ Respond immediately to prevent timeout
+  // Respond immediately to Ultravox to prevent timeouts
   res.status(200).json({ success: true, message: 'Merging manager in background.' });
 
-  // 📞 Start the Twilio call to manager in the background
+  // Run Twilio call in the background
   (async () => {
     try {
+      console.log('⚙️ Starting Twilio call to manager...');
+
       const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
       const call = await client.calls.create({
@@ -47,7 +48,7 @@ app.post('/tool-calls', (req, res) => {
 
       console.log(`📞 Manager merged to conference: ${call.sid}`);
     } catch (err) {
-      console.error('❌ Merge Error:', err.message);
+      console.error('❌ Twilio Merge Error:', err.message);
     }
   })();
 });
