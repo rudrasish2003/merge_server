@@ -17,13 +17,17 @@ const {
 
 const twilio = twilioPkg;
 const twimlVoice = twilio.twiml;
-
 const CONFERENCE_NAME = 'FedExAttendedRoom';
 
 // 🎯 Webhook for Ultravox to join AI to conference
 app.post('/connect-ultravox', (req, res) => {
+  console.log('🤖 Ultravox is joining conference:', CONFERENCE_NAME);
   const response = new twimlVoice.VoiceResponse();
-  response.dial().conference(CONFERENCE_NAME);
+  response.dial().conference({
+    startConferenceOnEnter: true,
+    endConferenceOnExit: false,
+    waitUrl: ''
+  }, CONFERENCE_NAME);
   res.type('text/xml').send(response.toString());
 });
 
@@ -38,6 +42,7 @@ app.post('/tool-calls', (req, res) => {
   (async () => {
     try {
       const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+      console.log('📞 Calling manager at:', MANAGER_PHONE_NUMBER);
 
       await client.calls.create({
         to: MANAGER_PHONE_NUMBER,
@@ -47,16 +52,20 @@ app.post('/tool-calls', (req, res) => {
         )}&conf=${CONFERENCE_NAME}`
       });
 
-      console.log('📞 Manager called with whisper');
+      console.log('✅ Manager called with whisper prompt');
     } catch (err) {
       console.error('❌ Twilio Transfer Error:', err.message);
     }
   })();
 });
 
-// 🎙 Manager whisper: press key to join
+// 🎙 Whisper prompt before manager joins
 app.post('/manager-whisper', (req, res) => {
   const { reason, conf } = req.query;
+
+  console.log('🔔 Whisper prompt triggered');
+  console.log('📝 Reason:', decodeURIComponent(reason));
+  console.log('📞 Conference:', conf);
 
   const twiml = new twimlVoice.VoiceResponse();
   const gather = twiml.gather({
@@ -65,22 +74,35 @@ app.post('/manager-whisper', (req, res) => {
     method: 'POST'
   });
 
-  gather.say(`You are being transferred a candidate. Reason: ${decodeURIComponent(
-    reason
-  )}. Press any key to join the call.`);
+  gather.say(`You are being transferred a candidate. Reason: ${decodeURIComponent(reason)}. Press any key to join the call.`);
 
   res.type('text/xml').send(twiml.toString());
 });
 
-// 👥 Join conference after manager presses a key
+// 👥 Join conference after manager presses key
 app.post('/join-conference', (req, res) => {
   const { conf } = req.query;
 
+  console.log('🔑 Manager pressed key to join conference:', conf);
+
   const twiml = new twimlVoice.VoiceResponse();
   twiml.say('Connecting you to the candidate now.');
-  twiml.dial().conference(conf);
+  twiml.dial().conference({
+    startConferenceOnEnter: true,
+    endConferenceOnExit: false,
+    waitUrl: '',
+    statusCallback: '/conference-events',
+    statusCallbackEvent: ['join', 'leave'],
+    statusCallbackMethod: 'POST'
+  }, conf);
 
   res.type('text/xml').send(twiml.toString());
+});
+
+// 📡 Log conference join/leave events
+app.post('/conference-events', (req, res) => {
+  console.log('📡 Twilio Conference Event:', JSON.stringify(req.body, null, 2));
+  res.sendStatus(200);
 });
 
 // ✅ Start server
