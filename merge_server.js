@@ -17,12 +17,11 @@ const {
 
 const twilio = twilioPkg;
 const twimlVoice = twilio.twiml;
-
 const CONFERENCE_NAME = 'FedExAttendedRoom';
 
-// Webhook for Ultravox to join AI to the conference
+// Ultravox joins the conference
 app.post('/connect-ultravox', (req, res) => {
-  console.log('Ultravox requested to join conference');
+  console.log('[Ultravox] Requested to join conference');
 
   const response = new twimlVoice.VoiceResponse();
   response.dial().conference({
@@ -34,44 +33,47 @@ app.post('/connect-ultravox', (req, res) => {
     statusCallbackMethod: 'POST'
   }, CONFERENCE_NAME);
 
-  console.log('Ultravox added to conference with event tracking');
+  console.log('[Ultravox] Added to conference with event tracking');
   res.type('text/xml').send(response.toString());
 });
 
-// Tool endpoint triggered by Ultravox
+// Ultravox triggers this tool to escalate to a manager
 app.post('/tool-calls', (req, res) => {
-  console.log('Received tool call at /tool-calls');
+  console.log('[Tool] Received escalation request at /tool-calls');
 
-  res.status(200).json({ success: true, message: 'Starting warm transfer...' });
+  res.status(200).json({ success: true, message: 'Starting warm transfer to manager...' });
 
   (async () => {
     try {
       const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
       const to = MANAGER_PHONE_NUMBER;
-      console.log(`Calling manager at: ${to}`);
+      console.log(`[Tool] Calling manager at: ${to}`);
 
       await client.calls.create({
         to,
         from: TWILIO_PHONE_NUMBER,
-        url: `https://merge-server.onrender.com/manager-whisper?reason=${encodeURIComponent(
-          'Candidate requested human help'
-        )}&conf=${CONFERENCE_NAME}`
+        url: `https://merge-server.onrender.com/manager-whisper?reason=${encodeURIComponent('Candidate requested human help')}&conf=${CONFERENCE_NAME}`
       });
 
-      console.log('Manager called with whisper prompt');
+      console.log('[Tool] Manager call initiated with whisper prompt');
     } catch (err) {
-      console.error('Twilio Transfer Error:', err.message);
+      console.error('[Tool] Twilio Call Error:', err.message);
     }
   })();
 });
 
-// Whisper message to manager
+// Manager gets a whisper message before joining
 app.post('/manager-whisper', (req, res) => {
   const { reason, conf } = req.query;
 
-  console.log('Whisper prompt triggered');
-  console.log(`Reason: ${decodeURIComponent(reason)}`);
-  console.log(`Conference: ${conf}`);
+  if (!reason || !conf) {
+    console.warn('[Whisper] Missing query params: reason or conf');
+    return res.status(400).send('Missing parameters');
+  }
+
+  console.log('[Whisper] Prompt triggered for manager');
+  console.log(`[Whisper] Reason: ${decodeURIComponent(reason)}`);
+  console.log(`[Whisper] Conference: ${conf}`);
 
   const twiml = new twimlVoice.VoiceResponse();
   const gather = twiml.gather({
@@ -80,17 +82,21 @@ app.post('/manager-whisper', (req, res) => {
     method: 'POST'
   });
 
-  gather.say(`You are being transferred a candidate. Reason: ${decodeURIComponent(
-    reason
-  )}. Press any key to join the call.`);
+  gather.say(`You are being transferred a candidate. Reason: ${decodeURIComponent(reason)}. Press any key to join the call.`);
 
   res.type('text/xml').send(twiml.toString());
 });
 
-// Join manager to the conference after keypress
+// Manager presses a key and is added to conference
 app.post('/join-conference', (req, res) => {
   const { conf } = req.query;
-  console.log(`Manager pressed key to join conference: ${conf}`);
+
+  if (!conf) {
+    console.warn('[Join] Missing conference name');
+    return res.status(400).send('Conference name missing');
+  }
+
+  console.log(`[Join] Manager confirmed with keypress. Joining conference: ${conf}`);
 
   const twiml = new twimlVoice.VoiceResponse();
   twiml.say('Connecting you to the candidate now.');
@@ -102,7 +108,7 @@ app.post('/join-conference', (req, res) => {
   res.type('text/xml').send(twiml.toString());
 });
 
-// Log Twilio conference events
+// Logs events from Twilio conference callbacks
 app.post('/conference-events', (req, res) => {
   const event = req.body;
   const timestamp = new Date().toISOString();
@@ -116,18 +122,18 @@ app.post('/conference-events', (req, res) => {
     SequenceNumber
   } = event;
 
-  const logPrefix = `[${timestamp}] [${StatusCallbackEvent}]`;
+  const logHeader = `[${timestamp}] [${StatusCallbackEvent.toUpperCase()}]`;
 
   if (StatusCallbackEvent === 'participant-join') {
-    console.log(`${logPrefix} Participant joined conference '${FriendlyName}'`);
+    console.log(`${logHeader} Participant joined '${FriendlyName}'`);
     console.log(`  CallSid: ${CallSid}`);
   } else if (StatusCallbackEvent === 'participant-leave') {
-    console.log(`${logPrefix} Participant left conference '${FriendlyName}'`);
+    console.log(`${logHeader} Participant left '${FriendlyName}'`);
     console.log(`  CallSid: ${CallSid}`);
     console.log(`  Status: ${ParticipantCallStatus}`);
     console.log(`  Reason: ${ReasonParticipantLeft}`);
   } else {
-    console.log(`${logPrefix} Conference Event: ${StatusCallbackEvent}`);
+    console.log(`${logHeader} Conference Event: ${StatusCallbackEvent}`);
     console.log(`  Conference: ${FriendlyName}`);
     console.log(`  CallSid: ${CallSid || 'N/A'}`);
     if (SequenceNumber) console.log(`  Sequence #: ${SequenceNumber}`);
