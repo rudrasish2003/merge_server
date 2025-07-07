@@ -21,9 +21,10 @@ const CONFERENCE_NAME = 'FedExAttendedRoom';
 
 // Ultravox joins the conference
 app.post('/connect-ultravox', (req, res) => {
-  console.log('[Ultravox] Requested to join conference');
+  console.log('[Ultravox] Request received to join conference');
 
   const response = new twimlVoice.VoiceResponse();
+  response.say('Connecting to conference.');
   response.dial().conference({
     startConferenceOnEnter: true,
     endConferenceOnExit: false,
@@ -33,13 +34,13 @@ app.post('/connect-ultravox', (req, res) => {
     statusCallbackMethod: 'POST'
   }, CONFERENCE_NAME);
 
-  console.log('[Ultravox] Added to conference with event tracking');
+  console.log('[Ultravox] Conference TwiML response sent');
   res.type('text/xml').send(response.toString());
 });
 
 // Ultravox triggers this tool to escalate to a manager
 app.post('/tool-calls', (req, res) => {
-  console.log('[Tool] Received escalation request at /tool-calls');
+  console.log('[Tool] Escalation request received');
 
   res.status(200).json({ success: true, message: 'Starting warm transfer to manager...' });
 
@@ -47,7 +48,7 @@ app.post('/tool-calls', (req, res) => {
     try {
       const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
       const to = MANAGER_PHONE_NUMBER;
-      console.log(`[Tool] Calling manager at: ${to}`);
+      console.log(`[Tool] Initiating call to manager: ${to}`);
 
       await client.calls.create({
         to,
@@ -55,7 +56,7 @@ app.post('/tool-calls', (req, res) => {
         url: `https://merge-server.onrender.com/manager-whisper?reason=${encodeURIComponent('Candidate requested human help')}&conf=${CONFERENCE_NAME}`
       });
 
-      console.log('[Tool] Manager call initiated with whisper prompt');
+      console.log('[Tool] Manager call initiated');
     } catch (err) {
       console.error('[Tool] Twilio Call Error:', err.message);
     }
@@ -67,13 +68,12 @@ app.post('/manager-whisper', (req, res) => {
   const { reason, conf } = req.query;
 
   if (!reason || !conf) {
-    console.warn('[Whisper] Missing query params: reason or conf');
+    console.warn('[Whisper] Missing parameters: reason or conf');
     return res.status(400).send('Missing parameters');
   }
 
-  console.log('[Whisper] Prompt triggered for manager');
-  console.log(`[Whisper] Reason: ${decodeURIComponent(reason)}`);
-  console.log(`[Whisper] Conference: ${conf}`);
+  console.log('[Whisper] Whisper initiated');
+  console.log(`[Whisper] Reason: ${decodeURIComponent(reason)}, Conference: ${conf}`);
 
   const twiml = new twimlVoice.VoiceResponse();
   const gather = twiml.gather({
@@ -96,7 +96,7 @@ app.post('/join-conference', (req, res) => {
     return res.status(400).send('Conference name missing');
   }
 
-  console.log(`[Join] Manager confirmed with keypress. Joining conference: ${conf}`);
+  console.log(`[Join] Manager joining conference: ${conf}`);
 
   const twiml = new twimlVoice.VoiceResponse();
   twiml.say('Connecting you to the candidate now.');
@@ -122,21 +122,24 @@ app.post('/conference-events', (req, res) => {
     SequenceNumber
   } = event;
 
-  const logHeader = `[${timestamp}] [${StatusCallbackEvent.toUpperCase()}]`;
+  const logHeader = `[${timestamp}] [${(StatusCallbackEvent || '').toUpperCase()}]`;
 
-  if (StatusCallbackEvent === 'participant-join') {
-    console.log(`${logHeader} Participant joined '${FriendlyName}'`);
-    console.log(`  CallSid: ${CallSid}`);
-  } else if (StatusCallbackEvent === 'participant-leave') {
-    console.log(`${logHeader} Participant left '${FriendlyName}'`);
-    console.log(`  CallSid: ${CallSid}`);
-    console.log(`  Status: ${ParticipantCallStatus}`);
-    console.log(`  Reason: ${ReasonParticipantLeft}`);
-  } else {
-    console.log(`${logHeader} Conference Event: ${StatusCallbackEvent}`);
-    console.log(`  Conference: ${FriendlyName}`);
-    console.log(`  CallSid: ${CallSid || 'N/A'}`);
-    if (SequenceNumber) console.log(`  Sequence #: ${SequenceNumber}`);
+  switch (StatusCallbackEvent) {
+    case 'participant-join':
+      console.log(`${logHeader} Participant joined '${FriendlyName}'`);
+      console.log(`  CallSid: ${CallSid}`);
+      break;
+    case 'participant-leave':
+      console.log(`${logHeader} Participant left '${FriendlyName}'`);
+      console.log(`  CallSid: ${CallSid}`);
+      console.log(`  Status: ${ParticipantCallStatus}`);
+      console.log(`  Reason: ${ReasonParticipantLeft}`);
+      break;
+    default:
+      console.log(`${logHeader} Event: ${StatusCallbackEvent}`);
+      console.log(`  Conference: ${FriendlyName}`);
+      console.log(`  CallSid: ${CallSid || 'N/A'}`);
+      if (SequenceNumber) console.log(`  Sequence #: ${SequenceNumber}`);
   }
 
   res.sendStatus(200);
